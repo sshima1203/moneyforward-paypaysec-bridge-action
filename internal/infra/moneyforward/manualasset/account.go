@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/chromedp/chromedp"
+
 	"github.com/mpyw/moneyforward-paypaysec-bridge-action/v3/internal/infra/chrome/cookiestore"
 )
 
@@ -21,6 +23,11 @@ const origin = "https://moneyforward.com"
 type Account struct {
 	// HTTP carries the signed-in session.
 	HTTP *http.Client
+
+	// RenderCreatePage returns the browser-rendered account page after opening
+	// the asset modal. MoneyForward now inserts the create form only after that
+	// click, so a plain HTTP GET cannot obtain its per-render CSRF token.
+	RenderCreatePage func(context.Context) (accountPage, error)
 
 	// AssetID identifies the manual asset, and is the value in its page URL —
 	// the one thing a user has to copy out of MoneyForward by hand.
@@ -50,7 +57,21 @@ func FromBrowser(ctx context.Context, assetID string) (Account, error) {
 	if err != nil {
 		return Account{}, fmt.Errorf("borrow session: %w", err)
 	}
-	return Account{HTTP: client, AssetID: assetID}, nil
+	accountURL := origin + "/accounts/show_manual/" + assetID
+	render := func(renderCtx context.Context) (accountPage, error) {
+		var html string
+		if err := chromedp.Run(renderCtx,
+			chromedp.Navigate(accountURL),
+			chromedp.WaitVisible(`a[href="#modal_asset_new"]`, chromedp.ByQuery),
+			chromedp.Click(`a[href="#modal_asset_new"]`, chromedp.ByQuery),
+			chromedp.WaitVisible(`#modal_asset_new form#new_user_asset_det`, chromedp.ByQuery),
+			chromedp.OuterHTML("html", &html, chromedp.ByQuery),
+		); err != nil {
+			return "", fmt.Errorf("render create form on %s: %w", accountURL, err)
+		}
+		return accountPage(html), nil
+	}
+	return Account{HTTP: client, AssetID: assetID, RenderCreatePage: render}, nil
 }
 
 // URL is the account's page.
@@ -84,7 +105,13 @@ func (a Account) Entries(ctx context.Context) ([]Entry, error) {
 // per-session *and* per-rendering, so one held across a sequence of writes
 // starts being rejected partway through.
 func (a Account) Writer(ctx context.Context) (Writer, error) {
-	page, err := a.load(ctx)
+	var page accountPage
+	var err error
+	if a.RenderCreatePage != nil {
+		page, err = a.RenderCreatePage(ctx)
+	} else {
+		page, err = a.load(ctx)
+	}
 	if err != nil {
 		return Writer{}, err
 	}
@@ -118,7 +145,13 @@ func (a Account) load(ctx context.Context) (accountPage, error) {
 // numbering is MoneyForward's and appears nowhere in their documentation, so
 // the form is the only statement of it there is.
 func (a Account) Subclasses(ctx context.Context) ([]SubclassOption, error) {
-	page, err := a.load(ctx)
+	var page accountPage
+	var err error
+	if a.RenderCreatePage != nil {
+		page, err = a.RenderCreatePage(ctx)
+	} else {
+		page, err = a.load(ctx)
+	}
 	if err != nil {
 		return nil, err
 	}
