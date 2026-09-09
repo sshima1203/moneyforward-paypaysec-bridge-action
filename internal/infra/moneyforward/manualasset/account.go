@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	cdppage "github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 
 	"github.com/mpyw/moneyforward-paypaysec-bridge-action/v3/internal/infra/chrome/cookiestore"
@@ -62,15 +63,26 @@ func FromBrowser(ctx context.Context, assetID string) (Account, error) {
 	render := func(_ context.Context) (accountPage, error) {
 		renderCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
 		defer cancel()
+		chromedp.ListenTarget(renderCtx, func(ev any) {
+			if _, ok := ev.(*cdppage.EventJavascriptDialogOpening); ok {
+				go func() { _ = chromedp.Run(renderCtx, cdppage.HandleJavaScriptDialog(true)) }()
+			}
+		})
 		var html string
-		if err := chromedp.Run(renderCtx,
-			chromedp.Navigate(accountURL),
-			chromedp.WaitVisible(`a[href="#modal_asset_new"]`, chromedp.ByQuery),
-			chromedp.Click(`a[href="#modal_asset_new"]`, chromedp.ByQuery),
-			chromedp.WaitVisible(`#modal_asset_new form#new_user_asset_det`, chromedp.ByQuery),
-			chromedp.OuterHTML("html", &html, chromedp.ByQuery),
-		); err != nil {
-			return "", fmt.Errorf("render create form on %s: %w", accountURL, err)
+		steps := []struct {
+			name   string
+			action chromedp.Action
+		}{
+			{"navigate", chromedp.Navigate(accountURL)},
+			{"find add-asset button", chromedp.WaitVisible(`a[href="#modal_asset_new"]`, chromedp.ByQuery)},
+			{"open add-asset form", chromedp.Click(`a[href="#modal_asset_new"]`, chromedp.ByQuery)},
+			{"wait for add-asset form", chromedp.WaitVisible(`#modal_asset_new form#new_user_asset_det`, chromedp.ByQuery)},
+			{"capture add-asset form", chromedp.OuterHTML("html", &html, chromedp.ByQuery)},
+		}
+		for _, step := range steps {
+			if err := chromedp.Run(renderCtx, step.action); err != nil {
+				return "", fmt.Errorf("render create form on %s at %s: %w", accountURL, step.name, err)
+			}
 		}
 		return accountPage(html), nil
 	}
