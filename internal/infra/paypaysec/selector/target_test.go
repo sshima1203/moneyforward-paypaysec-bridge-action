@@ -136,6 +136,7 @@ var expectedPrefix = map[string]string{
 	"japan-etf":       "日本株ETF",
 	"usa":             "米国株",
 	"usa-etf":         "米国株ETF",
+	"robo":            "ロボ貯蓄",
 	"miniapp":         "ミニ",
 	"toushin-app":     "投信ア",
 	"toushin-miniapp": "投信ミ",
