@@ -82,24 +82,6 @@ func TestBalancesAssetsSkipsPlaceholders(t *testing.T) {
 	}
 }
 
-func TestBalancesAssetsSkipsRoboSavingsMirror(t *testing.T) {
-	balances := Balances{Readings: []Reading{{
-		Target: selector.Target{Key: "robo", Name: "ロボ貯蓄", Kind: asset.MutualFund},
-		Holdings: []Holding{{Name: "ロボ貯蓄", Yen: 66879, HasYen: true}},
-	}}}
-
-	assets, err := balances.Assets()
-	if err != nil {
-		t.Fatalf("Assets() error = %v", err)
-	}
-	if len(assets) != 0 {
-		t.Fatalf("Assets() returned %d assets, want the mirrored Robo Savings total excluded", len(assets))
-	}
-	if got := balances.Categories(); len(got) != 1 || got[0] != "ロボ貯蓄" {
-		t.Fatalf("Categories() = %#v, want Robo Savings coverage for cleanup", got)
-	}
-}
-
 // TestAssetsRefusesTwoHoldingsUnderOneName covers the guard balance.go calls
 // the one against a failure that "looks exactly like a correct balance".
 //

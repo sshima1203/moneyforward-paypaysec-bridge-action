@@ -293,13 +293,6 @@ func (b Balances) Assets() ([]asset.Asset, error) {
 	var names assetname.Set
 
 	for _, reading := range b.Readings {
-		// This account does not use Robo Savings. Its reserve view mirrors the
-		// two US ETF positions, so recording its total would double-count them.
-		// Keep the reading as category coverage so a previously recorded
-		// aggregate can be removed safely during the one-time cleanup sync.
-		if reading.Target.Key == "robo" {
-			continue
-		}
 		for _, holding := range reading.Holdings {
 			if !holding.HasYen {
 				continue
