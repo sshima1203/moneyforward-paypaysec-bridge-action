@@ -67,6 +67,36 @@ func TestReadingParse(t *testing.T) {
 	}
 }
 
+func TestReadingParseAggregatesTotalsOnlyRoboSavings(t *testing.T) {
+	robo := selector.Target{Key: "robo", Name: "ロボ貯蓄", URL: "https://example.test/robo", Bucket: selector.BucketApp}
+	r := newReading(robo, "789012円", "600000円", "+189012円")
+	if err := r.parse(); err != nil {
+		t.Fatalf("parse() error = %v", err)
+	}
+	if r.HoldingCount() != 1 || r.Holdings[0].Name != "ロボ貯蓄" {
+		t.Fatalf("holdings = %#v, want one Robo Savings aggregate", r.Holdings)
+	}
+	if r.Holdings[0].Yen != 789012 || !r.Holdings[0].HasYen {
+		t.Errorf("aggregate value = %d (known=%v)", r.Holdings[0].Yen, r.Holdings[0].HasYen)
+	}
+	if r.HoldingsSumYen != 789012 || r.HoldingsParsed != 1 {
+		t.Errorf("holdings summed to %d over %d rows", r.HoldingsSumYen, r.HoldingsParsed)
+	}
+}
+
+func TestReadingParseDoesNotAggregateMissingOrdinaryHoldings(t *testing.T) {
+	r := newReading(usa, "789012円", "", "")
+	if err := r.parse(); err != nil {
+		t.Fatalf("parse() error = %v", err)
+	}
+	if r.HoldingCount() != 0 {
+		t.Fatalf("HoldingCount() = %d, want 0", r.HoldingCount())
+	}
+	if _, err := r.Amount(); err == nil {
+		t.Fatal("Amount() accepted missing ordinary holdings")
+	}
+}
+
 // TestReadingParseRejectsAnUnnamedHolding catches a row the page listed but did
 // not label. It has a figure and nothing to record it under, which downstream
 // becomes the asset "[米国株] ".

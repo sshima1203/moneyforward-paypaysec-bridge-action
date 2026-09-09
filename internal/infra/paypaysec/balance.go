@@ -139,6 +139,22 @@ func (r *Reading) parse() error {
 			r.HoldingsParsed++
 		}
 	}
+
+	// Some PayPay Securities accounts render Robo Savings as totals only: the
+	// category has a non-zero valuation, acquisition and gain, but no individual
+	// holding rows. Preserve that real balance as one aggregate position. Keep
+	// this exception limited to Robo Savings so a missing list in any ordinary
+	// stock or fund category remains a hard failure.
+	if r.Target.Key == "robo" && len(r.Holdings) == 0 && r.HasTotal && r.TotalYen != 0 {
+		r.Holdings = append(r.Holdings, Holding{
+			Name:     r.Target.Name,
+			GainText: r.Figures.GainRaw,
+			Yen:      r.TotalYen,
+			HasYen:   true,
+		})
+		r.HoldingsSumYen = r.TotalYen
+		r.HoldingsParsed = 1
+	}
 	return nil
 }
 
