@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/chromedp/chromedp"
 	"github.com/mpyw/moneyforward-paypaysec-bridge-action/v3/internal/infra/chrome/cookiestore"
 )
 
@@ -24,6 +25,11 @@ const origin = "https://moneyforward.com"
 type Account struct {
 	// HTTP carries the signed-in session.
 	HTTP *http.Client
+
+	// Browser renders the account page for reads. MoneyForward now inserts the
+	// portfolio rows with JavaScript, so the raw HTTP response still contains
+	// the create token but no existing entries.
+	Browser context.Context
 
 	// AssetID identifies the manual asset, and is the value in its page URL —
 	// the one thing a user has to copy out of MoneyForward by hand.
@@ -53,7 +59,7 @@ func FromBrowser(ctx context.Context, assetID string) (Account, error) {
 	if err != nil {
 		return Account{}, fmt.Errorf("borrow session: %w", err)
 	}
-	return Account{HTTP: client, AssetID: assetID}, nil
+	return Account{HTTP: client, Browser: ctx, AssetID: assetID}, nil
 }
 
 // URL is the account's page.
@@ -67,7 +73,7 @@ func (a Account) URL() string {
 // its token refresh all come through here — which is what makes it the place to
 // hang [Account.OnRead].
 func (a Account) Entries(ctx context.Context) ([]Entry, error) {
-	page, err := a.load(ctx)
+	page, err := a.loadEntries(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -79,6 +85,31 @@ func (a Account) Entries(ctx context.Context) ([]Entry, error) {
 		a.OnRead(entries)
 	}
 	return entries, nil
+}
+
+func (a Account) loadEntries(ctx context.Context) (accountPage, error) {
+	if a.Browser == nil {
+		return a.load(ctx)
+	}
+
+	opctx, cancel := context.WithTimeout(a.Browser, 45*time.Second)
+	stop := context.AfterFunc(ctx, cancel)
+	defer func() {
+		stop()
+		cancel()
+	}()
+
+	var body string
+	target := a.freshURL()
+	if err := chromedp.Run(opctx,
+		chromedp.Navigate(target),
+		chromedp.WaitReady(`form#new_user_asset_det[action="/bs/portfolio/new"]`, chromedp.ByQuery),
+		chromedp.Sleep(time.Second),
+		chromedp.Evaluate(`Array.from(document.querySelectorAll('form[id^="new_user_asset_det_"]')).map(form => form.outerHTML).join('')`, &body),
+	); err != nil {
+		return "", fmt.Errorf("render %s: %w", a.URL(), err)
+	}
+	return accountPage(body), nil
 }
 
 // Writer reads the account page for what a write needs.
@@ -96,14 +127,7 @@ func (a Account) Writer(ctx context.Context) (Writer, error) {
 
 // load GETs the account page.
 func (a Account) load(ctx context.Context) (accountPage, error) {
-	target, err := url.Parse(a.URL())
-	if err != nil {
-		return "", err
-	}
-	query := target.Query()
-	query.Set("mfpp_fresh", strconv.FormatInt(time.Now().UnixNano(), 10))
-	target.RawQuery = query.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.freshURL(), nil)
 	if err != nil {
 		return "", err
 	}
@@ -122,6 +146,17 @@ func (a Account) load(ctx context.Context) (accountPage, error) {
 		return "", fmt.Errorf("read %s: %w", a.URL(), err)
 	}
 	return accountPage(body), nil
+}
+
+func (a Account) freshURL() string {
+	target, err := url.Parse(a.URL())
+	if err != nil {
+		return a.URL()
+	}
+	query := target.Query()
+	query.Set("mfpp_fresh", strconv.FormatInt(time.Now().UnixNano(), 10))
+	target.RawQuery = query.Encode()
+	return target.String()
 }
 
 // Subclasses reports the 資産クラス options the create form offers.
