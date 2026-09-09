@@ -2,6 +2,7 @@ package port
 
 import (
 	"context"
+	"time"
 
 	"github.com/mpyw/moneyforward-paypaysec-bridge-action/v3/internal/application/domain/asset"
 )
@@ -35,4 +36,12 @@ type Explainer interface {
 	// LastRejection returns what the service said about the most recent write,
 	// or "" if it said nothing.
 	LastRejection() string
+}
+
+// EventuallyConsistent is an optional hint from a ledger whose reads can lag
+// behind successful writes. The sync use case still verifies every write, but
+// gives these ledgers time to expose it before declaring failure.
+type EventuallyConsistent interface {
+	ConfirmationAttempts() int
+	ConfirmationDelay() time.Duration
 }

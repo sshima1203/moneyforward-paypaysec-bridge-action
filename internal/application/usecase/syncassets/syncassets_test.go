@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mpyw/moneyforward-paypaysec-bridge-action/v3/internal/application/domain/asset"
 	"github.com/mpyw/moneyforward-paypaysec-bridge-action/v3/internal/application/domain/assetname"
@@ -145,6 +146,35 @@ func (s *stubLedger) applied(a asset.Asset) asset.Asset {
 
 func (s *stubLedger) LastRejection() string { return s.rejection }
 
+// delayedLedger models a service that accepts a create before its read API
+// exposes the new row.
+type delayedLedger struct {
+	stubLedger
+	pending     *asset.Asset
+	hiddenReads int
+}
+
+func (s *delayedLedger) Create(_ context.Context, a asset.Asset) error {
+	s.writes = append(s.writes, "create "+a.Name)
+	s.pending = &a
+	return nil
+}
+
+func (s *delayedLedger) Recorded(ctx context.Context) ([]asset.Asset, error) {
+	if s.pending != nil {
+		if s.hiddenReads > 0 {
+			s.hiddenReads--
+		} else {
+			s.held = append(s.held, *s.pending)
+			s.pending = nil
+		}
+	}
+	return s.stubLedger.Recorded(ctx)
+}
+
+func (s *delayedLedger) ConfirmationAttempts() int        { return 3 }
+func (s *delayedLedger) ConfirmationDelay() time.Duration { return 0 }
+
 type recordingReporter struct {
 	phases []string
 	read   int
@@ -264,6 +294,20 @@ func TestRunCatchesAWriteThatWasNotApplied(t *testing.T) {
 	// something went wrong.
 	if !strings.Contains(err.Error(), "20文字以内") {
 		t.Errorf("error = %v, want the service's own explanation", err)
+	}
+}
+
+func TestRunWaitsForEventuallyConsistentLedger(t *testing.T) {
+	ledger := &delayedLedger{hiddenReads: 1}
+
+	_, err := syncassets.Sync{
+		Bridges: one(&stubSource{assets: oneAsset()}, ledger),
+	}.Run(t.Context())
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(ledger.held) != 1 || ledger.pending != nil {
+		t.Fatalf("the delayed ledger holds %+v with pending %+v", ledger.held, ledger.pending)
 	}
 }
 

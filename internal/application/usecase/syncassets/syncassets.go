@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/mpyw/moneyforward-paypaysec-bridge-action/v3/internal/application/domain/asset"
 	"github.com/mpyw/moneyforward-paypaysec-bridge-action/v3/internal/application/domain/portfolio"
@@ -263,22 +264,43 @@ func (s Sync) apply(ctx context.Context, bridge Bridge, step portfolio.Step, wan
 // An account reached over the web can report success for a write it did not
 // apply — and has. What it holds afterwards is not ambiguous.
 func (s Sync) confirm(ctx context.Context, bridge Bridge, step portfolio.Step, want asset.Asset) error {
-	after, err := bridge.Ledger.Recorded(ctx)
-	if err != nil {
-		return fmt.Errorf("verify %s %q: %w", step.Action, step.Name, err)
-	}
-
-	var found *asset.Asset
-	for i := range after {
-		if after[i].Name == step.Name {
-			found = &after[i]
-			break
+	attempts, delay := 1, time.Duration(0)
+	if eventual, ok := bridge.Ledger.(port.EventuallyConsistent); ok {
+		if n := eventual.ConfirmationAttempts(); n > attempts {
+			attempts = n
 		}
+		delay = eventual.ConfirmationDelay()
 	}
 
-	verr := step.Confirm(want, found)
-	if verr == nil {
-		return nil
+	var verr error
+	for attempt := 0; attempt < attempts; attempt++ {
+		if attempt > 0 && delay > 0 {
+			timer := time.NewTimer(delay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return fmt.Errorf("verify %s %q: %w", step.Action, step.Name, ctx.Err())
+			case <-timer.C:
+			}
+		}
+
+		after, err := bridge.Ledger.Recorded(ctx)
+		if err != nil {
+			return fmt.Errorf("verify %s %q: %w", step.Action, step.Name, err)
+		}
+
+		var found *asset.Asset
+		for i := range after {
+			if after[i].Name == step.Name {
+				found = &after[i]
+				break
+			}
+		}
+
+		verr = step.Confirm(want, found)
+		if verr == nil {
+			return nil
+		}
 	}
 	// Only now: the service's own message cannot decide whether a write worked,
 	// but once something is known to have gone wrong it is worth quoting.

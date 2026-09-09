@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/mpyw/moneyforward-paypaysec-bridge-action/v3/internal/application/domain/asset"
 	"github.com/mpyw/moneyforward-paypaysec-bridge-action/v3/internal/infra/moneyforward"
@@ -174,6 +175,12 @@ func (l *MoneyForwardLedger) UseAccount(account manualasset.Account) {
 // Consulted only once a read-back has established that something went wrong;
 // see [port.Explainer].
 func (l *MoneyForwardLedger) LastRejection() string { return l.lastRejection }
+
+// MoneyForward updates a manual portfolio asynchronously. A create can return
+// successfully while the account page still shows the previous rows for a few
+// seconds, so confirmation must tolerate that short propagation window.
+func (l *MoneyForwardLedger) ConfirmationAttempts() int { return 13 }
+func (l *MoneyForwardLedger) ConfirmationDelay() time.Duration { return 5 * time.Second }
 
 // prepare reads the account page for a token valid against this rendering, and
 // renders the asset as an entry.

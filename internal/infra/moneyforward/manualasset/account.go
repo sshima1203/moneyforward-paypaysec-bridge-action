@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
+	"time"
 
 	"github.com/mpyw/moneyforward-paypaysec-bridge-action/v3/internal/infra/chrome/cookiestore"
 )
@@ -93,11 +96,20 @@ func (a Account) Writer(ctx context.Context) (Writer, error) {
 
 // load GETs the account page.
 func (a Account) load(ctx context.Context) (accountPage, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.URL(), nil)
+	target, err := url.Parse(a.URL())
+	if err != nil {
+		return "", err
+	}
+	query := target.Query()
+	query.Set("mfpp_fresh", strconv.FormatInt(time.Now().UnixNano(), 10))
+	target.RawQuery = query.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Accept", "text/html,application/xhtml+xml")
+	req.Header.Set("Cache-Control", "no-cache, no-store, max-age=0")
+	req.Header.Set("Pragma", "no-cache")
 
 	resp, err := a.HTTP.Do(req)
 	if err != nil {
