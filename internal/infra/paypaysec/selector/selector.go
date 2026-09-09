@@ -191,7 +191,6 @@ var Targets = []Target{
 	{Kind: asset.DomesticStock, Key: "japan-etf", Name: "日本株ETF", URL: "https://www.paypay-sec.co.jp/trade?country=japan-etf", Bucket: BucketApp},
 	{Kind: asset.USStock, Key: "usa", Name: "米国株", URL: "https://www.paypay-sec.co.jp/trade?country=usa", Bucket: BucketApp},
 	{Kind: asset.USStock, Key: "usa-etf", Name: "米国株ETF", URL: "https://www.paypay-sec.co.jp/trade?country=usa-etf", Bucket: BucketApp},
-	{Kind: asset.MutualFund, Key: "robo", Name: "ロボ貯蓄", URL: "https://www.paypay-sec.co.jp/trade?reserve_mode=1", Bucket: BucketApp},
 	{Kind: asset.USStock, Key: "miniapp", Name: "ミニアプリ", ShortName: "ミニ", URL: URLMiniApp, Bucket: BucketMiniApp},
 
 	// Same URL, different bucket — so the names have to distinguish them, or the
