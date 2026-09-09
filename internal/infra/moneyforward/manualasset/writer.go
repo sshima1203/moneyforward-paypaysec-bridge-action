@@ -187,7 +187,13 @@ func (w Writer) post(ctx context.Context, token, endpoint string, values url.Val
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("X-CSRF-Token", token)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml")
+	req.Header.Set("Origin", origin)
 	req.Header.Set("Referer", w.Account.URL())
+	req.Header.Set("Sec-Fetch-Dest", "document")
+	req.Header.Set("Sec-Fetch-Mode", "navigate")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	req.Header.Set("Sec-Fetch-User", "?1")
+	req.Header.Set("User-Agent", "Mozilla/5.0")
 
 	resp, err := w.Account.HTTP.Do(req)
 	if err != nil {
