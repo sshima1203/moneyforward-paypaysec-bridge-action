@@ -131,7 +131,12 @@ func (s *stubLedger) Delete(_ context.Context, name string) error {
 	if name == s.ignore {
 		return nil
 	}
-	s.held = slices.DeleteFunc(s.held, func(a asset.Asset) bool { return a.Name == name })
+	for i := range s.held {
+		if s.held[i].Name == name {
+			s.held = slices.Delete(s.held, i, i+1)
+			break
+		}
+	}
 	return nil
 }
 
@@ -343,6 +348,25 @@ func TestRunRefusesDuplicateNamesInTheLedger(t *testing.T) {
 	}
 	if len(ledger.writes) != 0 {
 		t.Errorf("it wrote before noticing: %v", ledger.writes)
+	}
+}
+
+func TestRunRepairsExactDuplicateNamesWhenEnabled(t *testing.T) {
+	want := oneAsset()[0]
+	ledger := &stubLedger{held: []asset.Asset{want, want}}
+
+	_, err := syncassets.Sync{
+		Bridges:              one(&stubSource{assets: []asset.Asset{want}}, ledger),
+		RepairExactDuplicates: true,
+	}.Run(t.Context())
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(ledger.held) != 1 || ledger.held[0] != want {
+		t.Fatalf("the repaired ledger holds %+v", ledger.held)
+	}
+	if wantWrites := []string{"delete " + want.Name}; !slices.Equal(ledger.writes, wantWrites) {
+		t.Fatalf("writes = %v, want %v", ledger.writes, wantWrites)
 	}
 }
 

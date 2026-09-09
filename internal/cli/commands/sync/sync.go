@@ -84,6 +84,7 @@ func run(ctx context.Context) error {
 		return err
 	}
 	defer cleanup()
+	sync.RepairExactDuplicates = true
 
 	_, err = sync.Run(ctx)
 	return err

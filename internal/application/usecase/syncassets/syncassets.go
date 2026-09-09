@@ -55,6 +55,12 @@ type Sync struct {
 	// nothing is a bug, and acting on it empties the account. Only a caller that
 	// meant it — `mfpp debug mf sync --empty` — turns it on.
 	AllowEmpty bool
+
+	// RepairExactDuplicates removes extra copies only when every recorded copy
+	// exactly matches the holding read from the source. This repairs duplicates
+	// left by a previously timed-out confirmation without guessing between
+	// different values that merely share a name.
+	RepairExactDuplicates bool
 }
 
 // Result is what a run did, one entry per bridge, in the order they were
@@ -193,6 +199,12 @@ func (s Sync) reconcile(ctx context.Context, bridge Bridge, held asset.Holdings)
 	if err != nil {
 		return portfolio.Plan{}, err
 	}
+	if s.RepairExactDuplicates {
+		recorded, err = s.repairExactDuplicates(ctx, bridge.Ledger, recorded, held.Assets)
+		if err != nil {
+			return portfolio.Plan{}, err
+		}
+	}
 	if dup := portfolio.DuplicateName(recorded); dup != "" {
 		return portfolio.Plan{}, fmt.Errorf(
 			"the account holds more than one entry named %q; nothing here can tell them "+
@@ -240,6 +252,70 @@ func (s Sync) reconcile(ctx context.Context, bridge Bridge, held asset.Holdings)
 	return plan, nil
 }
 
+func (s Sync) repairExactDuplicates(ctx context.Context, ledger port.Ledger, recorded, wanted []asset.Asset) ([]asset.Asset, error) {
+	wants := make(map[string]asset.Asset, len(wanted))
+	for _, a := range wanted {
+		wants[a.Name] = a
+	}
+
+	for {
+		name := portfolio.DuplicateName(recorded)
+		if name == "" {
+			return recorded, nil
+		}
+		want, ok := wants[name]
+		if !ok {
+			return recorded, nil
+		}
+
+		count := 0
+		for _, got := range recorded {
+			if got.Name != name {
+				continue
+			}
+			count++
+			if got.Yen != want.Yen || got.AcquisitionYen != want.AcquisitionYen ||
+				got.HasAcquisition != want.HasAcquisition || got.Kind != want.Kind {
+				return recorded, nil
+			}
+		}
+
+		if err := ledger.Delete(ctx, name); err != nil {
+			return recorded, fmt.Errorf("repair duplicate %q: %w", name, err)
+		}
+		after, err := waitForFewerNamed(ctx, ledger, name, count)
+		if err != nil {
+			return recorded, err
+		}
+		recorded = after
+	}
+}
+
+func waitForFewerNamed(ctx context.Context, ledger port.Ledger, name string, before int) ([]asset.Asset, error) {
+	attempts, delay := confirmationPolicy(ledger)
+	for attempt := 0; attempt < attempts; attempt++ {
+		if attempt > 0 {
+			if err := waitConfirmation(ctx, delay); err != nil {
+				return nil, fmt.Errorf("repair duplicate %q: %w", name, err)
+			}
+		}
+		after, err := ledger.Recorded(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("repair duplicate %q: %w", name, err)
+		}
+		count := 0
+		for _, a := range after {
+			if a.Name == name {
+				count++
+			}
+		}
+		if count < before {
+			return after, nil
+		}
+	}
+	return nil, fmt.Errorf("repair duplicate %q reported no error but the extra copy is still recorded", name)
+}
+
 // apply performs one step and confirms it took effect.
 func (s Sync) apply(ctx context.Context, bridge Bridge, step portfolio.Step, want asset.Asset) error {
 	var err error
@@ -264,23 +340,13 @@ func (s Sync) apply(ctx context.Context, bridge Bridge, step portfolio.Step, wan
 // An account reached over the web can report success for a write it did not
 // apply — and has. What it holds afterwards is not ambiguous.
 func (s Sync) confirm(ctx context.Context, bridge Bridge, step portfolio.Step, want asset.Asset) error {
-	attempts, delay := 1, time.Duration(0)
-	if eventual, ok := bridge.Ledger.(port.EventuallyConsistent); ok {
-		if n := eventual.ConfirmationAttempts(); n > attempts {
-			attempts = n
-		}
-		delay = eventual.ConfirmationDelay()
-	}
+	attempts, delay := confirmationPolicy(bridge.Ledger)
 
 	var verr error
 	for attempt := 0; attempt < attempts; attempt++ {
-		if attempt > 0 && delay > 0 {
-			timer := time.NewTimer(delay)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return fmt.Errorf("verify %s %q: %w", step.Action, step.Name, ctx.Err())
-			case <-timer.C:
+		if attempt > 0 {
+			if err := waitConfirmation(ctx, delay); err != nil {
+				return fmt.Errorf("verify %s %q: %w", step.Action, step.Name, err)
 			}
 		}
 
@@ -310,6 +376,31 @@ func (s Sync) confirm(ctx context.Context, bridge Bridge, step portfolio.Step, w
 		}
 	}
 	return verr
+}
+
+func confirmationPolicy(ledger port.Ledger) (int, time.Duration) {
+	attempts, delay := 1, time.Duration(0)
+	if eventual, ok := ledger.(port.EventuallyConsistent); ok {
+		if n := eventual.ConfirmationAttempts(); n > attempts {
+			attempts = n
+		}
+		delay = eventual.ConfirmationDelay()
+	}
+	return attempts, delay
+}
+
+func waitConfirmation(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 // phase announces a stage when there is anyone listening.
