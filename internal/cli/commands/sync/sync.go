@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -85,6 +86,7 @@ func run(ctx context.Context) error {
 	}
 	defer cleanup()
 	sync.RepairExactDuplicates = true
+	sync.RequireRecorded = os.Getenv("MONEYFORWARD_REQUIRE_RECORDED") == "true"
 
 	_, err = sync.Run(ctx)
 	return err

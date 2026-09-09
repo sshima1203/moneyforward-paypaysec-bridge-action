@@ -370,6 +370,21 @@ func TestRunRepairsExactDuplicateNamesWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestRunRequiresKnownExistingRowsWhenEnabled(t *testing.T) {
+	ledger := &stubLedger{}
+
+	_, err := syncassets.Sync{
+		Bridges:        one(&stubSource{assets: oneAsset()}, ledger),
+		RequireRecorded: true,
+	}.Run(t.Context())
+	if err == nil || !strings.Contains(err.Error(), "refusing to create duplicates") {
+		t.Fatalf("Run() error = %v, want the migration guard", err)
+	}
+	if len(ledger.writes) != 0 {
+		t.Fatalf("it wrote despite the migration guard: %v", ledger.writes)
+	}
+}
+
 // TestRunSignsInToBothBeforeWriting pins an order that is not incidental: both
 // services mail a one-time code, and a code stamped before its own request
 // belongs to a previous attempt.

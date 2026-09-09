@@ -61,6 +61,12 @@ type Sync struct {
 	// left by a previously timed-out confirmation without guessing between
 	// different values that merely share a name.
 	RepairExactDuplicates bool
+
+	// RequireRecorded is a migration guard used while repairing an account
+	// known to contain entries. If the site changes its read response again,
+	// the run stops instead of interpreting the unreadable page as empty and
+	// creating another duplicate.
+	RequireRecorded bool
 }
 
 // Result is what a run did, one entry per bridge, in the order they were
@@ -198,6 +204,9 @@ func (s Sync) reconcile(ctx context.Context, bridge Bridge, held asset.Holdings)
 	recorded, err := bridge.Ledger.Recorded(ctx)
 	if err != nil {
 		return portfolio.Plan{}, err
+	}
+	if s.RequireRecorded && len(recorded) == 0 {
+		return portfolio.Plan{}, errors.New("the account is known to hold entries but none could be read; refusing to create duplicates")
 	}
 	if s.RepairExactDuplicates {
 		recorded, err = s.repairExactDuplicates(ctx, bridge.Ledger, recorded, held.Assets)
