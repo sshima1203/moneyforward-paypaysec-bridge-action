@@ -155,6 +155,16 @@ func (r *Reading) parse() error {
 		r.HoldingsSumYen = r.TotalYen
 		r.HoldingsParsed = 1
 	}
+
+	// An unused Mini App account renders its total as a placeholder instead of
+	// zero. With no rows and no acquisition or gain amount, that is the site's
+	// normal empty state. Normalize only this optional account; a placeholder in
+	// any populated or ordinary category must still fail reconciliation.
+	if r.Target.Key == "miniapp" && len(r.Holdings) == 0 && r.Figures.TotalPresent &&
+		!r.HasTotal && !r.HasAcquisition && !r.HasGain {
+		r.TotalYen = 0
+		r.HasTotal = true
+	}
 	return nil
 }
 

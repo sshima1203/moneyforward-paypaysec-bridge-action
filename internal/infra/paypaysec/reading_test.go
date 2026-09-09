@@ -97,6 +97,21 @@ func TestReadingParseDoesNotAggregateMissingOrdinaryHoldings(t *testing.T) {
 	}
 }
 
+func TestReadingParseNormalizesUnusedMiniAppPlaceholder(t *testing.T) {
+	miniapp := selector.Target{Key: "miniapp", Name: "ミニアプリ", URL: "https://example.test/miniapp", Bucket: selector.BucketMiniApp}
+	r := newReading(miniapp, "—", "—", "—")
+	if err := r.parse(); err != nil {
+		t.Fatalf("parse() error = %v", err)
+	}
+	yen, err := r.Amount()
+	if err != nil {
+		t.Fatalf("Amount() error = %v", err)
+	}
+	if yen != 0 {
+		t.Errorf("Amount() = %d, want 0", yen)
+	}
+}
+
 // TestReadingParseRejectsAnUnnamedHolding catches a row the page listed but did
 // not label. It has a figure and nothing to record it under, which downstream
 // becomes the asset "[米国株] ".
