@@ -92,6 +92,10 @@ const (
 	// CONFIRMED — the global-nav 家計簿 link.
 	HomeAnchor = `a[href="/cf"]`
 
+	// AccountSelectorButton is shown after authentication when Money Forward ID
+	// asks which remembered account should enter the requested service.
+	AccountSelectorButton = `form[action="/sign_in/email?select_account=true"] button`
+
 	// Manual asset rollover (= balance update) endpoint, found by inspecting an
 	// existing manual asset's show_manual page. CONFIRMED.
 	RolloverEndpoint = "https://moneyforward.com/accounts/rollover"

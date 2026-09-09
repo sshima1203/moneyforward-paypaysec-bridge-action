@@ -41,6 +41,7 @@ const (
 	homeCandidateKey       = "__home__"
 	idPortalCandidateKey   = "__id_portal__"
 	signInFormCandidateKey = "__sign_in_form__"
+	accountSelectorKey     = "__account_selector__"
 )
 
 // LoginResult reports what actually happened, so callers can log it and so the
@@ -91,7 +92,7 @@ func (c *Client) Login(ctx context.Context, src otp.Source) (LoginResult, error)
 	}
 	if landing != signInFormCandidateKey {
 		res.AlreadyAuthenticated = true
-		return res, c.enterApp(ctx)
+		return res, c.enterApp(ctx, src, &res)
 	}
 
 	// WaitVisible on the password field rather than assuming it renders with the
@@ -145,7 +146,7 @@ func (c *Client) Login(ctx context.Context, src otp.Source) (LoginResult, error)
 		}
 	}
 
-	return res, c.enterApp(ctx)
+	return res, c.enterApp(ctx, src, &res)
 }
 
 // enterApp opens moneyforward.com and confirms the session reached it.
@@ -158,7 +159,7 @@ func (c *Client) Login(ctx context.Context, src otp.Source) (LoginResult, error)
 //
 // Harmless when already in the app: the navigation is a no-op and the marker is
 // already present.
-func (c *Client) enterApp(ctx context.Context) error {
+func (c *Client) enterApp(ctx context.Context, src otp.Source, res *LoginResult) error {
 	// Signing in through the app's own entry point already lands in the app, via
 	// a redirect chain that may still be in flight. Navigating on top of that
 	// cancels it — ERR_ABORTED — so wait for the marker first and only steer if
@@ -169,12 +170,62 @@ func (c *Client) enterApp(ctx context.Context) error {
 		return nil
 	}
 
+	if err := runWithTimeout(ctx, homeTimeout, chromedp.Navigate(selector.HomeURL)); err != nil {
+		return stepErr(StepAwaitHome, browser.PageOf(ctx).WithLocation(
+			fmt.Errorf("opening %s after authentication: %w", selector.HomeURL, err)))
+	}
+
+	landing, err := browser.PageOf(ctx).WaitForAny(homeTimeout, map[string]string{
+		homeCandidateKey:   selector.HomeAnchor,
+		accountSelectorKey: selector.AccountSelectorButton,
+	})
+	if err != nil {
+		return stepErr(StepAwaitHome, browser.PageOf(ctx).WithLocation(
+			fmt.Errorf("opening %s after authentication: %w", selector.HomeURL, err)))
+	}
+	if landing == homeCandidateKey {
+		return nil
+	}
+
+	// Some accounts now require selecting the remembered Money Forward ID and
+	// confirming its password once more before entering ME.
+	if err := runWithTimeout(ctx, formTimeout,
+		chromedp.Click(selector.AccountSelectorButton, chromedp.ByQuery),
+		chromedp.WaitVisible(selector.PasswordInput, chromedp.ByQuery),
+		chromedp.SendKeys(selector.PasswordInput, c.Password, chromedp.ByQuery),
+	); err != nil {
+		return stepErr(StepFillCredentials, browser.PageOf(ctx).WithLocation(err))
+	}
+	submittedAt := time.Now()
+	if err := runWithTimeout(ctx, formTimeout, chromedp.Click(selector.SignInSubmit, chromedp.ByQuery)); err != nil {
+		return stepErr(StepSubmitCredentials, err)
+	}
+
+	probe := make(map[string]string, len(selector.OTPInputCandidates)+2)
+	maps.Copy(probe, selector.OTPInputCandidates)
+	probe[homeCandidateKey] = selector.HomeAnchor
+	probe[idPortalCandidateKey] = selector.IDPortalMarker
+	hit, err := browser.PageOf(ctx).WaitForAny(challengeTimeout, probe)
+	if err != nil {
+		return stepErr(StepAwaitChallenge, browser.PageOf(ctx).WithLocation(err))
+	}
+	if hit != homeCandidateKey && hit != idPortalCandidateKey {
+		res.OTPRequired = true
+		res.OTPInputKey = hit
+		code, err := src.Fetch(ctx, submittedAt)
+		if err != nil {
+			return stepErr(StepFetchOTP, fmt.Errorf("via %s: %w", src.Describe(), err))
+		}
+		if err := c.submitOTP(ctx, selector.OTPInputCandidates[hit], code, res); err != nil {
+			return err
+		}
+	}
+
 	if err := runWithTimeout(ctx, homeTimeout,
 		chromedp.Navigate(selector.HomeURL),
 		chromedp.WaitVisible(selector.HomeAnchor, chromedp.ByQuery),
 	); err != nil {
-		return stepErr(StepAwaitHome, browser.PageOf(ctx).WithLocation(
-			fmt.Errorf("opening %s after authentication: %w", selector.HomeURL, err)))
+		return stepErr(StepAwaitHome, browser.PageOf(ctx).WithLocation(err))
 	}
 	return nil
 }
