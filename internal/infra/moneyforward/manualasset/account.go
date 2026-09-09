@@ -58,9 +58,9 @@ func FromBrowser(ctx context.Context, assetID string) (Account, error) {
 		return Account{}, fmt.Errorf("borrow session: %w", err)
 	}
 	accountURL := origin + "/accounts/show_manual/" + assetID
-	render := func(renderCtx context.Context) (accountPage, error) {
+	render := func(_ context.Context) (accountPage, error) {
 		var html string
-		if err := chromedp.Run(renderCtx,
+		if err := chromedp.Run(ctx,
 			chromedp.Navigate(accountURL),
 			chromedp.WaitVisible(`a[href="#modal_asset_new"]`, chromedp.ByQuery),
 			chromedp.Click(`a[href="#modal_asset_new"]`, chromedp.ByQuery),
