@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/chromedp/chromedp"
 
@@ -59,8 +60,10 @@ func FromBrowser(ctx context.Context, assetID string) (Account, error) {
 	}
 	accountURL := origin + "/accounts/show_manual/" + assetID
 	render := func(_ context.Context) (accountPage, error) {
+		renderCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+		defer cancel()
 		var html string
-		if err := chromedp.Run(ctx,
+		if err := chromedp.Run(renderCtx,
 			chromedp.Navigate(accountURL),
 			chromedp.WaitVisible(`a[href="#modal_asset_new"]`, chromedp.ByQuery),
 			chromedp.Click(`a[href="#modal_asset_new"]`, chromedp.ByQuery),
