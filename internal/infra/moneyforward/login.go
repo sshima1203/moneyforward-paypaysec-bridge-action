@@ -191,7 +191,20 @@ func (c *Client) enterApp(ctx context.Context, src otp.Source, res *LoginResult)
 	// confirming its password once more before entering ME.
 	if err := runWithTimeout(ctx, formTimeout,
 		chromedp.Click(selector.AccountSelectorButton, chromedp.ByQuery),
-		chromedp.WaitVisible(selector.PasswordInput, chromedp.ByQuery),
+	); err != nil {
+		return stepErr(StepFillCredentials, browser.PageOf(ctx).WithLocation(err))
+	}
+	selected, err := browser.PageOf(ctx).WaitForAny(formTimeout, map[string]string{
+		homeCandidateKey:       selector.HomeAnchor,
+		signInFormCandidateKey: selector.PasswordInput,
+	})
+	if err != nil {
+		return stepErr(StepAwaitHome, browser.PageOf(ctx).WithLocation(err))
+	}
+	if selected == homeCandidateKey {
+		return nil
+	}
+	if err := runWithTimeout(ctx, formTimeout,
 		chromedp.SendKeys(selector.PasswordInput, c.Password, chromedp.ByQuery),
 	); err != nil {
 		return stepErr(StepFillCredentials, browser.PageOf(ctx).WithLocation(err))
