@@ -6,7 +6,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mpyw/moneyforward-paypaysec-bridge-action/v3/internal/infra/chrome/cookiestore"
@@ -120,6 +122,23 @@ func (a Account) load(ctx context.Context) (accountPage, error) {
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("read %s: %w", a.URL(), err)
+	}
+	if os.Getenv("MFPP_DIAGNOSTIC") == "true" {
+		location := "other"
+		if resp.Request != nil && resp.Request.URL != nil {
+			switch {
+			case strings.HasPrefix(resp.Request.URL.Path, "/accounts/show_manual/"):
+				location = "manual-account"
+			case strings.Contains(resp.Request.URL.Host, "id.moneyforward.com"):
+				location = "identity"
+			default:
+				location = resp.Request.URL.Host + resp.Request.URL.Path
+			}
+		}
+		_, _ = fmt.Fprintf(os.Stderr,
+			"moneyforward page diagnostic: status=%d location=%s bytes=%d create-forms=%d edit-forms=%d edit-paths=%d\n",
+			resp.StatusCode, location, len(body), strings.Count(string(body), `id="new_user_asset_det"`),
+			strings.Count(string(body), `id="new_user_asset_det_`), strings.Count(string(body), "/bs/portfolio/edit"))
 	}
 	return accountPage(body), nil
 }
