@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -97,6 +98,10 @@ func (p accountPage) writerFor(account Account) (Writer, error) {
 	if sm := subAccountPattern.FindStringSubmatch(form); sm != nil {
 		w.SubAssetID = sm[1]
 		w.SubAccountLabel = html.UnescapeString(strings.TrimSpace(sm[2]))
+	}
+	if w.SubAssetID == "" && createForm == nil {
+		w.SubAssetID = strings.TrimSpace(os.Getenv("MONEYFORWARD_PAYPAYSEC_SUBACCOUNT_ID"))
+		w.SubAccountLabel = "PayPay証券"
 	}
 	if w.SubAssetID == "" {
 		return w, fmt.Errorf("no sub-account option on %s", account.URL())
