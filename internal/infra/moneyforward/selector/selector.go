@@ -80,8 +80,9 @@ const (
 	// Two hops are easy to get wrong here. Authenticating at id.moneyforward.com
 	// leaves the browser on the ID account portal, which links nowhere into the
 	// app; and moneyforward.com/ is the marketing page, which renders signed-out
-	// no matter who you are. /me is the signed-in app. CONFIRMED 2026-08-01.
-	HomeURL = "https://moneyforward.com/me"
+	// no matter who you are. /me became the product landing page in September
+	// 2026, while /cf remains the authenticated household-account app.
+	HomeURL = "https://moneyforward.com/cf"
 
 	// IDPortalMarker identifies the ID account portal — id.moneyforward.com/me,
 	// where a direct sign-in lands. CONFIRMED 2026-08-01.
