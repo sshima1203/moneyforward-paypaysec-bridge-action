@@ -94,7 +94,7 @@ const (
 
 	// AccountSelectorButton is shown after authentication when Money Forward ID
 	// asks which remembered account should enter the requested service.
-	AccountSelectorButton = `form[action="/sign_in/email?select_account=true"] button`
+	AccountSelectorButton = `main form button`
 
 	// Manual asset rollover (= balance update) endpoint, found by inspecting an
 	// existing manual asset's show_manual page. CONFIRMED.
