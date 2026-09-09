@@ -12,6 +12,7 @@ import (
 
 // Endpoints the account page's own forms submit to.
 const (
+	portfolioPath = "/bs/portfolio"
 	createPath = "/bs/portfolio/new"
 
 	// editPath takes an update, tunnelled as a POST with _method=put.

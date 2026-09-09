@@ -168,6 +168,7 @@ func parseEntryForm(hash, body string) (Entry, error) {
 		ID:             fields["id"],
 		Hash:           hash,
 		Token:          token,
+		SubAccountID:   fields["sub_account_id_hash"],
 		Name:           fields["name"],
 		Yen:            yen,
 		AcquisitionYen: acquisition,

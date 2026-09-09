@@ -30,6 +30,7 @@ type Account struct {
 	// UserAgent must match the browser that established the session. The site
 	// redirects a borrowed-cookie request to the top page when it changes.
 	UserAgent string
+	SubAssetID string
 
 	// AssetID identifies the manual asset, and is the value in its page URL —
 	// the one thing a user has to copy out of MoneyForward by hand.
@@ -63,7 +64,10 @@ func FromBrowser(ctx context.Context, assetID string) (Account, error) {
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`navigator.userAgent`, &userAgent)); err != nil {
 		return Account{}, fmt.Errorf("read browser user agent: %w", err)
 	}
-	return Account{HTTP: client, UserAgent: userAgent, AssetID: assetID}, nil
+	return Account{
+		HTTP: client, UserAgent: userAgent, AssetID: assetID,
+		SubAssetID: strings.TrimSpace(os.Getenv("MONEYFORWARD_PAYPAYSEC_SUBACCOUNT_ID")),
+	}, nil
 }
 
 // URL is the account's page.
@@ -71,19 +75,30 @@ func (a Account) URL() string {
 	return origin + "/accounts/show_manual/" + a.AssetID
 }
 
+func (a Account) portfolioURL() string { return origin + portfolioPath }
+
 // Entries returns the rows currently recorded in the account.
 //
 // The single door onto the account's contents — Sync, its verification step and
 // its token refresh all come through here — which is what makes it the place to
 // hang [Account.OnRead].
 func (a Account) Entries(ctx context.Context) ([]Entry, error) {
-	page, err := a.load(ctx)
+	page, err := a.loadURL(ctx, a.portfolioURL())
 	if err != nil {
 		return nil, err
 	}
 	entries, err := page.entries()
 	if err != nil {
 		return nil, err
+	}
+	if a.SubAssetID != "" {
+		filtered := entries[:0]
+		for _, entry := range entries {
+			if entry.SubAccountID == a.SubAssetID {
+				filtered = append(filtered, entry)
+			}
+		}
+		entries = filtered
 	}
 	if a.OnRead != nil {
 		a.OnRead(entries)
@@ -97,16 +112,27 @@ func (a Account) Entries(ctx context.Context) ([]Entry, error) {
 // per-session *and* per-rendering, so one held across a sequence of writes
 // starts being rejected partway through.
 func (a Account) Writer(ctx context.Context) (Writer, error) {
-	page, err := a.load(ctx)
+	page, err := a.loadURL(ctx, a.portfolioURL())
 	if err != nil {
 		return Writer{}, err
 	}
-	return page.writerFor(a)
+	writer, err := page.writerFor(a)
+	if err != nil {
+		return Writer{}, err
+	}
+	if a.SubAssetID != "" {
+		writer.SubAssetID = a.SubAssetID
+	}
+	return writer, nil
 }
 
 // load GETs the account page.
 func (a Account) load(ctx context.Context) (accountPage, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.freshURL(), nil)
+	return a.loadURL(ctx, a.URL())
+}
+
+func (a Account) loadURL(ctx context.Context, target string) (accountPage, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.freshURL(target), nil)
 	if err != nil {
 		return "", err
 	}
@@ -158,10 +184,10 @@ func (a Account) userAgent() string {
 	return "Mozilla/5.0"
 }
 
-func (a Account) freshURL() string {
-	target, err := url.Parse(a.URL())
+func (a Account) freshURL(raw string) string {
+	target, err := url.Parse(raw)
 	if err != nil {
-		return a.URL()
+		return raw
 	}
 	query := target.Query()
 	query.Set("mfpp_fresh", strconv.FormatInt(time.Now().UnixNano(), 10))
@@ -175,7 +201,7 @@ func (a Account) freshURL() string {
 // numbering is MoneyForward's and appears nowhere in their documentation, so
 // the form is the only statement of it there is.
 func (a Account) Subclasses(ctx context.Context) ([]SubclassOption, error) {
-	page, err := a.load(ctx)
+	page, err := a.loadURL(ctx, a.portfolioURL())
 	if err != nil {
 		return nil, err
 	}

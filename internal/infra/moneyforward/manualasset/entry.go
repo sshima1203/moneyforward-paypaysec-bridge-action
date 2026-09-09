@@ -113,6 +113,10 @@ type Entry struct {
 	// login.
 	Token string
 
+	// SubAccountID identifies the manual account this row belongs to. It is
+	// needed when rows are read from the all-assets portfolio page.
+	SubAccountID string
+
 	Name string
 
 	// Yen is the current valuation.
