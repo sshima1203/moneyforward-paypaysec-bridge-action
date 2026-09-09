@@ -193,7 +193,7 @@ func (w Writer) post(ctx context.Context, token, endpoint string, values url.Val
 	req.Header.Set("Sec-Fetch-Mode", "navigate")
 	req.Header.Set("Sec-Fetch-Site", "same-origin")
 	req.Header.Set("Sec-Fetch-User", "?1")
-	req.Header.Set("User-Agent", "Mozilla/5.0")
+	req.Header.Set("User-Agent", w.Account.userAgent())
 
 	resp, err := w.Account.HTTP.Do(req)
 	if err != nil {

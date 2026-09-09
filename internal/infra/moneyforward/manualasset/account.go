@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chromedp/chromedp"
 	"github.com/mpyw/moneyforward-paypaysec-bridge-action/v3/internal/infra/chrome/cookiestore"
 )
 
@@ -26,6 +27,9 @@ const origin = "https://moneyforward.com"
 type Account struct {
 	// HTTP carries the signed-in session.
 	HTTP *http.Client
+	// UserAgent must match the browser that established the session. The site
+	// redirects a borrowed-cookie request to the top page when it changes.
+	UserAgent string
 
 	// AssetID identifies the manual asset, and is the value in its page URL —
 	// the one thing a user has to copy out of MoneyForward by hand.
@@ -55,7 +59,11 @@ func FromBrowser(ctx context.Context, assetID string) (Account, error) {
 	if err != nil {
 		return Account{}, fmt.Errorf("borrow session: %w", err)
 	}
-	return Account{HTTP: client, AssetID: assetID}, nil
+	var userAgent string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`navigator.userAgent`, &userAgent)); err != nil {
+		return Account{}, fmt.Errorf("read browser user agent: %w", err)
+	}
+	return Account{HTTP: client, UserAgent: userAgent, AssetID: assetID}, nil
 }
 
 // URL is the account's page.
@@ -111,7 +119,7 @@ func (a Account) load(ctx context.Context) (accountPage, error) {
 	req.Header.Set("Sec-Fetch-Site", "same-origin")
 	req.Header.Set("Sec-Fetch-User", "?1")
 	req.Header.Set("Upgrade-Insecure-Requests", "1")
-	req.Header.Set("User-Agent", "Mozilla/5.0")
+	req.Header.Set("User-Agent", a.userAgent())
 
 	resp, err := a.HTTP.Do(req)
 	if err != nil {
@@ -141,6 +149,13 @@ func (a Account) load(ctx context.Context) (accountPage, error) {
 			strings.Count(string(body), `id="new_user_asset_det_`), strings.Count(string(body), "/bs/portfolio/edit"))
 	}
 	return accountPage(body), nil
+}
+
+func (a Account) userAgent() string {
+	if strings.TrimSpace(a.UserAgent) != "" {
+		return a.UserAgent
+	}
+	return "Mozilla/5.0"
 }
 
 func (a Account) freshURL() string {
