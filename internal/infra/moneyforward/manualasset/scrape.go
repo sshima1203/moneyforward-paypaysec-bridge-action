@@ -76,16 +76,23 @@ func (p accountPage) writerFor(account Account) (Writer, error) {
 	}
 
 	createForm := createFormPattern.FindStringSubmatch(string(p))
-	if createForm == nil {
-		return w, fmt.Errorf("no create form on %s — the session is probably not authenticated", account.URL())
+	form := string(p)
+	if createForm != nil {
+		form = createForm[1]
+		m := tokenPattern.FindStringSubmatch(form)
+		if m == nil {
+			return w, fmt.Errorf("no authenticity_token in the create form on %s", account.URL())
+		}
+		w.Token = m[1]
+	} else {
+		// The current page inserts the modal form in the browser. Rails emits
+		// the same masked token in the csrf-token meta tag, so it is valid for
+		// the create POST even when the form wrapper is absent from the raw GET.
+		if w.MetaToken == "" {
+			return w, fmt.Errorf("no create form or page CSRF token on %s — the session is probably not authenticated", account.URL())
+		}
+		w.Token = w.MetaToken
 	}
-	form := createForm[1]
-
-	m := tokenPattern.FindStringSubmatch(form)
-	if m == nil {
-		return w, fmt.Errorf("no authenticity_token in the create form on %s", account.URL())
-	}
-	w.Token = m[1]
 
 	if sm := subAccountPattern.FindStringSubmatch(form); sm != nil {
 		w.SubAssetID = sm[1]
