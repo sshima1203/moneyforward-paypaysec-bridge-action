@@ -61,8 +61,20 @@ func TestSchemeForKeepsTheCategoryWhole(t *testing.T) {
 
 func TestSchemeForMarksTruncation(t *testing.T) {
 	got := Scheme{Category: "投信ミ"}.For("テスト・グローバル・ファンドインデックス")
-	if !strings.HasSuffix(got, Ellipsis) {
+	if !strings.Contains(got, Ellipsis) {
 		t.Errorf("For() = %q, want a shortened name to say so", got)
+	}
+}
+
+func TestSchemeForDistinguishesLongCommonPrefixes(t *testing.T) {
+	s := Scheme{Category: "米国株ETF"}
+	a := s.For("Direxion デイリー 半導体株 ブル 3倍ETF")
+	b := s.For("Direxion デイリー テスラ株ブル2倍ETF")
+	if a == b {
+		t.Fatalf("two long holdings map to %q", a)
+	}
+	if len([]rune(a)) > Limit || len([]rune(b)) > Limit {
+		t.Fatalf("names exceed limit: %q / %q", a, b)
 	}
 }
 

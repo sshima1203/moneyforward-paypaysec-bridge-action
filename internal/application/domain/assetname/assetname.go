@@ -10,6 +10,7 @@ package assetname
 
 import (
 	"fmt"
+	"hash/fnv"
 	"strings"
 )
 
@@ -51,6 +52,15 @@ func truncateRunes(s string, n int) string {
 	}
 	if n == 1 {
 		return Ellipsis
+	}
+	// Keep a stable fingerprint of the full holding name. Names that share a
+	// long prefix (common for leveraged ETFs and fund share classes) must not
+	// collapse onto the same MoneyForward row after truncation.
+	if n > 5 {
+		h := fnv.New32a()
+		_, _ = h.Write([]byte(s))
+		suffix := fmt.Sprintf("%s%04x", Ellipsis, h.Sum32()&0xffff)
+		return string(r[:n-len([]rune(suffix))]) + suffix
 	}
 	return string(r[:n-1]) + Ellipsis
 }

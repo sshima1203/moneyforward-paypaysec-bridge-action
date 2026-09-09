@@ -1,7 +1,6 @@
 package paypaysec
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/mpyw/moneyforward-paypaysec-bridge-action/v3/internal/application/domain/asset"
@@ -36,7 +35,7 @@ func TestBalancesAssets(t *testing.T) {
 	want := map[string]int64{
 		"[米国株] テスト電機":          456789,
 		"[米国株] アップル":           234567,
-		"[投信ミ] テスト・グローバル・ファン…": 345678,
+		"[投信ミ] テスト・グローバル…95cb": 345678,
 	}
 	if len(assets) != len(want) {
 		t.Fatalf("Assets() returned %d assets, want %d", len(assets), len(want))
@@ -92,7 +91,7 @@ func TestBalancesAssetsSkipsPlaceholders(t *testing.T) {
 // cap plus a category prefix is not much room — so nothing static can rule this
 // out, and the assetname.Set tests prove only that the set works, not that
 // Assets consults it.
-func TestAssetsRefusesTwoHoldingsUnderOneName(t *testing.T) {
+func TestAssetsKeepsLongCommonPrefixHoldingsDistinct(t *testing.T) {
 	// Two funds under the same category, differing only past the truncation
 	// point, so both render as the same 20-rune asset name.
 	const a = "テスト・グローバル・インデックスAコース"
@@ -102,8 +101,8 @@ func TestAssetsRefusesTwoHoldingsUnderOneName(t *testing.T) {
 		Key: "toushin-miniapp", Name: "投資信託（ミニアプリ）", ShortName: "投信ミ",
 		Bucket: selector.BucketMiniApp, Kind: asset.MutualFund,
 	}
-	if target.AssetName(a) != target.AssetName(b) {
-		t.Fatalf("this test needs a collision; got %q and %q",
+	if target.AssetName(a) == target.AssetName(b) {
+		t.Fatalf("holdings still collide; got %q and %q",
 			target.AssetName(a), target.AssetName(b))
 	}
 
@@ -116,15 +115,11 @@ func TestAssetsRefusesTwoHoldingsUnderOneName(t *testing.T) {
 	}}}
 
 	assets, err := balances.Assets()
-	if err == nil {
-		t.Fatalf("Assets() returned %d records for two holdings sharing one name; "+
-			"one would silently overwrite the other", len(assets))
+	if err != nil {
+		t.Fatalf("Assets() error = %v", err)
 	}
-	// Both originals named, so the reader can tell which two collided.
-	for _, want := range []string{a, b} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("Assets() error = %v, want it to name %q", err, want)
-		}
+	if len(assets) != 2 || assets[0].Name == assets[1].Name {
+		t.Fatalf("Assets() = %#v, want two distinct records", assets)
 	}
 }
 
